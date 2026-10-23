@@ -13,7 +13,7 @@ from selenium.webdriver.chrome.service import Service
 # Read credentials safely from GitHub Secrets environment variables
 USERNAME = os.environ.get("JUST_DICE_USER", "")
 PASSWORD = os.environ.get("JUST_DICE_PASS", "")
-CODE_2FA = os.environ.get("JUST_DICE_2FA", "")
+CODE_2FA = os.environ.get("JUST_DICE_2FA", "") # Optional: Ignored if left blank
 
 STATE_FILE = "bot_state.json"
 
@@ -114,12 +114,17 @@ try:
         user_el.send_keys(USERNAME)
         pass_el.send_keys(PASSWORD)
         
-        if CODE_2FA:
+        # Optional 2FA Check: Only executes if CODE_2FA secret is provided and not empty
+        if CODE_2FA and CODE_2FA.strip() != "":
             try:
                 code_el = driver.find_element(By.ID, "mycode")
-                code_el.send_keys(CODE_2FA)
-            except:
-                pass
+                code_el.send_keys(CODE_2FA.strip())
+                print("[System] 2FA code provided and entered.")
+            except Exception as e:
+                print("[System] 2FA input field not found on page, skipping.")
+        else:
+            print("[System] No 2FA code provided, skipping 2FA step.")
+
         ok_el.click()
         time.sleep(5)
     except Exception as e:
@@ -166,6 +171,7 @@ try:
             last_balance_change_time = current_time
             last_observed_balance = walletStash
 
+        # Watchdog stall check (10 seconds)
         if (current_time - last_balance_change_time) >= 10.0 or walletStash <= 0:
             print("[Watchdog] Balance stalled or zero. Refreshing page...")
             driver.refresh()
