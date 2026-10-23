@@ -2,9 +2,7 @@ name: Snowy Bot Runner
 
 on:
   workflow_dispatch: # Allows manual trigger from Actions tab
-  schedule:
-    - cron: '0 */5 * * *' # Runs every 5 hours automatically
-
+  
 jobs:
   run-bot:
     runs-on: ubuntu-latest
