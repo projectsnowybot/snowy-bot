@@ -101,7 +101,7 @@ def calculate_next_progression_step(incoming_wager):
 
 
 def log_bet_info(bet_amount, current_balance, current_profit):
-    print(f"Bet: {bet_amount:.8f} | Balance: {current_balance:.8f} | Profit: {current_profit:+.8f}", flush=True)
+    print(f"[Status Update] Bet: {bet_amount:.8f} | Balance: {current_balance:.8f} | Profit: {current_profit:+.8f}", flush=True)
 
 
 def fetch_live_balance(driver):
@@ -142,7 +142,6 @@ def main():
     print("[System] Initializing Firefox headless browser driver for GitHub Actions...", flush=True)
     driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()), options=opt)
     driver.set_window_size(1920, 1080)
-    wait = WebDriverWait(driver, 35)
 
     try:
         print("[System] Navigating to just-dice.com...", flush=True)
@@ -151,25 +150,24 @@ def main():
 
         # Dismiss modal if present
         try:
-            close_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.fancybox-item.fancybox-close")))
+            close_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.fancybox-item.fancybox-close")))
             close_btn.click()
         except Exception:
             pass
 
         # Click Account / Login
         try:
-            account_link = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Account")))
+            account_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.LINK_TEXT, "Account")))
             account_link.click()
         except Exception:
             pass
 
         print("[System] Submitting credentials via JavaScript...", flush=True)
         
-        u_el = wait.until(EC.presence_of_element_located((By.ID, "myuser")))
-        p_el = wait.until(EC.presence_of_element_located((By.ID, "mypass")))
-        ok_el = wait.until(EC.presence_of_element_located((By.ID, "myok")))
+        u_el = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "myuser")))
+        p_el = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "mypass")))
+        ok_el = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "myok")))
 
-        # Use JS execution to set values and click, bypassing ElementNotInteractableException
         driver.execute_script("""
             var u = arguments[0];
             var p = arguments[1];
@@ -235,9 +233,10 @@ def main():
         last_balance_change_time = time.time()
         has_placed_first_bet = False
         watchdog_threshold = 10.0
+        last_log_time = 0  # Tracker for log throttling
 
         print(f"[System] Login verified! Balance loaded: {walletStash:.8f} (Baseline: {startingPocketChange:.8f})", flush=True)
-        print("[Watchdog] Dynamic 10-second activity & betting stall watchdog is active.", flush=True)
+        print("[Watchdog] Dynamic 10-second activity & betting stall watchdog is active. Logs are throttled to every 60 seconds.", flush=True)
 
         start_run_time = time.time()
         while time.time() - start_run_time < 18000:
@@ -281,7 +280,10 @@ def main():
                         os.remove(STATE_FILE)
                     break
 
-                log_bet_info(computedNextBet, walletStash, round(walletStash - startingPocketChange, 8))
+                # Throttle normal status logs to once every 60 seconds
+                if current_time - last_log_time >= 60:
+                    log_bet_info(computedNextBet, walletStash, round(walletStash - startingPocketChange, 8))
+                    last_log_time = current_time
 
                 try:
                     driver.find_element(By.ID, "b_min").click()
