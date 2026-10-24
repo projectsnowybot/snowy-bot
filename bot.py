@@ -4,6 +4,7 @@ import math
 import os
 import sys
 import time
+import traceback
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -104,12 +105,10 @@ def log_bet_info(bet_amount, current_balance, current_profit):
 
 
 def fetch_live_balance(driver):
-    """Robust balance getter that bypasses 'loading...' by waking up DOM elements via JS."""
     try:
         val = driver.execute_script("""
             var el = document.getElementById('pct_balance');
             if (!el) return '0';
-            
             if (el.value === 'loading...' || !el.value) {
                 el.focus();
                 el.dispatchEvent(new Event('focus', { bubbles: true }));
@@ -142,6 +141,7 @@ def main():
 
     print("[System] Initializing Firefox headless browser driver for GitHub Actions...", flush=True)
     driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()), options=opt)
+    driver.set_window_size(1920, 1080)
     wait = WebDriverWait(driver, 35)
 
     try:
@@ -156,7 +156,7 @@ def main():
         except Exception:
             pass
 
-        # Click Account / Login with explicit wait
+        # Click Account / Login
         try:
             account_link = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Account")))
             account_link.click()
@@ -165,10 +165,9 @@ def main():
 
         print("[System] Submitting credentials...", flush=True)
         
-        # Explicitly wait for login fields to be fully rendered and interactable
         u_el = wait.until(EC.presence_of_element_located((By.ID, "myuser")))
         p_el = wait.until(EC.presence_of_element_located((By.ID, "mypass")))
-        ok_el = wait.until(EC.element_to_be_clickable((By.ID, "myok")))
+        ok_el = wait.until(EC.presence_of_element_located((By.ID, "myok")))
 
         u_el.clear()
         u_el.send_keys(username)
@@ -183,10 +182,10 @@ def main():
             except Exception:
                 pass
 
-        ok_el.click()
+        # Use JavaScript click to prevent interception issues in headless mode
+        driver.execute_script("arguments[0].click();", ok_el)
         print("[System] Login submitted, waiting for balance initialization...", flush=True)
 
-        # Wait loop for balance to resolve from 'loading...'
         current_bal = 0.0
         start_time = time.time()
         while time.time() - start_time < 40:
@@ -228,9 +227,8 @@ def main():
         print(f"[System] Login verified! Balance loaded: {walletStash:.8f} (Baseline: {startingPocketChange:.8f})", flush=True)
         print("[Watchdog] Dynamic 10-second activity & betting stall watchdog is active.", flush=True)
 
-        # Main betting loop for GitHub Actions
         start_run_time = time.time()
-        while time.time() - start_run_time < 18000:  # Run up to 5 hours per execution
+        while time.time() - start_run_time < 18000:
             time.sleep(0.5)
             walletStash = fetch_live_balance(driver)
             if walletStash <= 0:
@@ -294,6 +292,7 @@ def main():
 
     except Exception as e:
         print(f"[Error] Bot crashed: {e}", flush=True)
+        traceback.print_exc()
     finally:
         driver.quit()
 
