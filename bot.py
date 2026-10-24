@@ -110,7 +110,6 @@ def fetch_live_balance(driver):
             var el = document.getElementById('pct_balance');
             if (!el) return '0';
             
-            // Force focus & input events to wake up the script if stuck on loading
             if (el.value === 'loading...' || !el.value) {
                 el.focus();
                 el.dispatchEvent(new Event('focus', { bubbles: true }));
@@ -157,20 +156,19 @@ def main():
         except Exception:
             pass
 
-        # Click Account / Login
+        # Click Account / Login with explicit wait
         try:
             account_link = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Account")))
             account_link.click()
         except Exception:
             pass
 
-        time.sleep(2)
         print("[System] Submitting credentials...", flush=True)
-        wait.until(EC.presence_of_element_located((By.ID, "myuser")))
         
-        u_el = driver.find_element(By.ID, "myuser")
-        p_el = driver.find_element(By.ID, "mypass")
-        ok_el = driver.find_element(By.ID, "myok")
+        # Explicitly wait for login fields to be fully rendered and interactable
+        u_el = wait.until(EC.presence_of_element_located((By.ID, "myuser")))
+        p_el = wait.until(EC.presence_of_element_located((By.ID, "mypass")))
+        ok_el = wait.until(EC.element_to_be_clickable((By.ID, "myok")))
 
         u_el.clear()
         u_el.send_keys(username)
@@ -195,7 +193,6 @@ def main():
             current_bal = fetch_live_balance(driver)
             if current_bal > 0:
                 break
-            # Simulate a small click on the body to wake up headless event loops
             try:
                 driver.find_element(By.TAG_NAME, "body").click()
             except Exception:
