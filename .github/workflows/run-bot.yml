@@ -1,8 +1,8 @@
 name: Snowy Bot Runner
 
 on:
-  workflow_dispatch: # Allows manual trigger from Actions tab
-  
+  workflow_dispatch: # Allows manual trigger from the Actions tab
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
@@ -19,7 +19,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install selenium webdriver-manager
+        pip install selenium webdriver-manager pwinput
 
     - name: Run Snowy Bot
       env:
@@ -27,4 +27,4 @@ jobs:
         JUST_DICE_PASS: ${{ secrets.JUST_DICE_PASS }}
         JUST_DICE_2FA: ${{ secrets.JUST_DICE_2FA }}
       run: |
-        python snowybot.py
+        python bot.py
