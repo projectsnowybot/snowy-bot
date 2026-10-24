@@ -13,7 +13,7 @@ from selenium.webdriver.chrome.service import Service
 # Read credentials safely from GitHub Secrets environment variables
 USERNAME = os.environ.get("JUST_DICE_USER", "")
 PASSWORD = os.environ.get("JUST_DICE_PASS", "")
-CODE_2FA = os.environ.get("JUST_DICE_2FA", "") # Optional: Ignored if left blank
+CODE_2FA = os.environ.get("JUST_DICE_2FA", "")
 
 STATE_FILE = "bot_state.json"
 
@@ -93,6 +93,7 @@ options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+wait = WebDriverWait(driver, 15)
 
 try:
     print("[System] Navigating to just-dice.com...")
@@ -114,13 +115,12 @@ try:
         user_el.send_keys(USERNAME)
         pass_el.send_keys(PASSWORD)
         
-        # Optional 2FA Check: Only executes if CODE_2FA secret is provided and not empty
         if CODE_2FA and CODE_2FA.strip() != "":
             try:
                 code_el = driver.find_element(By.ID, "mycode")
                 code_el.send_keys(CODE_2FA.strip())
                 print("[System] 2FA code provided and entered.")
-            except Exception as e:
+            except:
                 print("[System] 2FA input field not found on page, skipping.")
         else:
             print("[System] No 2FA code provided, skipping 2FA step.")
@@ -130,9 +130,7 @@ try:
     except Exception as e:
         print("[System] Login fields not found or already logged in.")
 
-    bal_elem = WebDriverWait(driver, 15).until(
-        EC.presence_of_element_located((By.ID, "pct_balance"))
-    )
+    bal_elem = wait.until(EC.presence_of_element_located((By.ID, "pct_balance")))
     current_bal = float(bal_elem.get_attribute("value").replace(",", "").strip())
     print(f"[System] Initial Balance Read: {current_bal:.8f}")
 
@@ -157,7 +155,7 @@ try:
     # Run for up to 5 hours per workflow execution
     start_run_time = time.time()
     while time.time() - start_run_time < 18000:
-        time.sleep(0.5)
+        time.sleep(1.0)
         try:
             bal_val = driver.find_element(By.ID, "pct_balance").get_attribute("value")
             walletStash = round(float(bal_val.replace(",", "").strip()), 8)
@@ -165,14 +163,16 @@ try:
             continue
 
         current_time = time.time()
-        balance_changed = (walletStash == round(last_observed_balance + previousWagerAmount, 8) or walletStash == round(last_observed_balance - previousWagerAmount, 8))
+        
+        # Robust balance check: triggers if balance changed or on the very first round
+        balance_changed = (walletStash != last_observed_balance)
 
-        if walletStash > 0 and balance_changed:
+        if walletStash > 0 and balance_changed and has_first_bet:
             last_balance_change_time = current_time
             last_observed_balance = walletStash
 
-        # Watchdog stall check (10 seconds)
-        if (current_time - last_balance_change_time) >= 10.0 or walletStash <= 0:
+        # Watchdog stall check (15 seconds without balance movement)
+        if (current_time - last_balance_change_time) >= 15.0 or walletStash <= 0:
             print("[Watchdog] Balance stalled or zero. Refreshing page...")
             driver.refresh()
             time.sleep(5)
@@ -181,6 +181,8 @@ try:
 
         if balance_changed or not has_first_bet:
             has_first_bet = True
+            last_observed_balance = walletStash # update baseline
+            
             computed_next_bet = calculate_next_progression_step(previousWagerAmount)
 
             if walletStash >= 144000:
@@ -192,16 +194,21 @@ try:
             profit = round(walletStash - startingPocketChange, 8)
             print(f"Bet: {computed_next_bet:.8f} | Balance: {walletStash:.8f} | Profit: {profit:+.8f}")
 
-            driver.find_element(By.ID, "b_min").click()
-            chance_el = driver.find_element(By.ID, "pct_chance")
-            chance_el.clear()
-            chance_el.send_keys("49.5")
+            try:
+                # Explicitly wait for elements to be clickable before interacting
+                wait.until(EC.element_to_be_clickable((By.ID, "b_min"))).click()
+                
+                chance_el = wait.until(EC.presence_of_element_located((By.ID, "pct_chance")))
+                chance_el.clear()
+                chance_el.send_keys("49.5")
 
-            bet_el = driver.find_element(By.ID, "pct_bet")
-            bet_el.clear()
-            bet_el.send_keys(f"{computed_next_bet:.8f}")
+                bet_el = wait.until(EC.presence_of_element_located((By.ID, "pct_bet")))
+                bet_el.clear()
+                bet_el.send_keys(f"{computed_next_bet:.8f}")
 
-            driver.find_element(By.ID, "a_lo").click()
+                wait.until(EC.element_to_be_clickable((By.ID, "a_lo"))).click()
+            except Exception as bet_err:
+                print(f"[Error] Failed to place bet elements: {bet_err}")
 
             previousWagerAmount = computed_next_bet
             previousWalletState = walletStash
