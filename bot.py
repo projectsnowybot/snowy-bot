@@ -103,6 +103,28 @@ def log_bet_info(bet_amount, current_balance, current_profit):
     print(f"Bet: {bet_amount:.8f} | Balance: {current_balance:.8f} | Profit: {current_profit:+.8f}", flush=True)
 
 
+def fetch_live_balance(driver):
+    """Robust balance getter that bypasses 'loading...' by waking up DOM elements via JS."""
+    try:
+        val = driver.execute_script("""
+            var el = document.getElementById('pct_balance');
+            if (!el) return '0';
+            
+            // Force focus & input events to wake up the script if stuck on loading
+            if (el.value === 'loading...' || !el.value) {
+                el.focus();
+                el.dispatchEvent(new Event('focus', { bubbles: true }));
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            return el.value;
+        """)
+        if val and str(val).strip().lower() not in ["loading...", ""]:
+            return round(float(str(val).replace(",", "").strip()), 8)
+    except Exception:
+        pass
+    return 0.0
+
+
 def main():
     global startingPocketChange, tinyPeanutSize, backupPeanut, tenPeanuts
     global walletStash, previousWalletState, currentWagerAmount, previousWagerAmount
@@ -164,12 +186,24 @@ def main():
                 pass
 
         ok_el.click()
-        print("[System] Login submitted, waiting 10 seconds for stabilization...", flush=True)
-        time.sleep(10)
+        print("[System] Login submitted, waiting for balance initialization...", flush=True)
 
-        # Initialize balance and state
-        bal_elem = wait.until(EC.presence_of_element_located((By.ID, "pct_balance")))
-        current_bal = round(float(bal_elem.get_attribute("value").replace(",", "").strip()), 8)
+        # Wait loop for balance to resolve from 'loading...'
+        current_bal = 0.0
+        start_time = time.time()
+        while time.time() - start_time < 40:
+            current_bal = fetch_live_balance(driver)
+            if current_bal > 0:
+                break
+            # Simulate a small click on the body to wake up headless event loops
+            try:
+                driver.find_element(By.TAG_NAME, "body").click()
+            except Exception:
+                pass
+            time.sleep(2)
+
+        if current_bal <= 0:
+            raise Exception("Balance element failed to resolve from 'loading...' state.")
 
         savedState = load_state()
 
@@ -201,10 +235,8 @@ def main():
         start_run_time = time.time()
         while time.time() - start_run_time < 18000:  # Run up to 5 hours per execution
             time.sleep(0.5)
-            try:
-                bal_val = driver.find_element(By.ID, "pct_balance").get_attribute("value")
-                walletStash = round(float(bal_val.replace(",", "").strip()), 8)
-            except Exception:
+            walletStash = fetch_live_balance(driver)
+            if walletStash <= 0:
                 continue
 
             current_time = time.time()
