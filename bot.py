@@ -163,27 +163,39 @@ def main():
         except Exception:
             pass
 
-        print("[System] Submitting credentials...", flush=True)
+        print("[System] Submitting credentials via JavaScript...", flush=True)
         
         u_el = wait.until(EC.presence_of_element_located((By.ID, "myuser")))
         p_el = wait.until(EC.presence_of_element_located((By.ID, "mypass")))
         ok_el = wait.until(EC.presence_of_element_located((By.ID, "myok")))
 
-        u_el.clear()
-        u_el.send_keys(username)
-        p_el.clear()
-        p_el.send_keys(password)
+        # Use JS execution to set values and click, bypassing ElementNotInteractableException
+        driver.execute_script("""
+            var u = arguments[0];
+            var p = arguments[1];
+            var ok = arguments[2];
+            var userVal = arguments[3];
+            var passVal = arguments[4];
+            var tfaVal = arguments[5];
 
-        if code_2fa and code_2fa.strip() != "":
-            try:
-                c_el = driver.find_element(By.ID, "mycode")
-                c_el.clear()
-                c_el.send_keys(code_2fa.strip())
-            except Exception:
-                pass
+            u.value = userVal;
+            u.dispatchEvent(new Event('input', { bubbles: true }));
+            u.dispatchEvent(new Event('change', { bubbles: true }));
 
-        # Use JavaScript click to prevent interception issues in headless mode
-        driver.execute_script("arguments[0].click();", ok_el)
+            p.value = passVal;
+            p.dispatchEvent(new Event('input', { bubbles: true }));
+            p.dispatchEvent(new Event('change', { bubbles: true }));
+
+            var cEl = document.getElementById('mycode');
+            if (cEl && tfaVal) {
+                cEl.value = tfaVal;
+                cEl.dispatchEvent(new Event('input', { bubbles: true }));
+                cEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            ok.click();
+        """, u_el, p_el, ok_el, username, password, code_2fa)
+
         print("[System] Login submitted, waiting for balance initialization...", flush=True)
 
         current_bal = 0.0
